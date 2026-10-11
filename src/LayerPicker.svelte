@@ -3,36 +3,22 @@
         <img class="picker__thumb" src={current.image} alt="" />
         <div class="picker__options">
             <div class="picker__title">{current.name}</div>
-            {#each options as { key, label, value, choices, long } (key)}
-                {#if compact || long}
-                    <label class="picker__row">
-                        <span class="picker__label">{label}</span>
-                        <select {value} on:change={e => set(key, e.currentTarget.value)}>
-                            {#each choices as { id, name, detail }}
-                                <option value={id}>{name} {detail}</option>
+            {#if options.length}
+                <div class="picker__options-row">
+                    {#each options as { key, label, value, choices } (key)}
+                        <select
+                            {value}
+                            title={label}
+                            aria-label={label}
+                            on:change={e => set(key, e.currentTarget.value)}
+                        >
+                            {#each choices as { id, name }}
+                                <option value={id}>{name}</option>
                             {/each}
                         </select>
-                    </label>
-                {:else}
-                    <div class="picker__row">
-                        <span class="picker__label">{label}</span>
-                        <div class="picker__chips">
-                            {#each choices as { id, name, detail }}
-                                <button
-                                    class="chip"
-                                    class:chip--on={id === value}
-                                    on:click={() => set(key, id)}
-                                >
-                                    {name}
-                                    {#if detail}
-                                        <small>{detail}</small>
-                                    {/if}
-                                </button>
-                            {/each}
-                        </div>
-                    </div>
-                {/if}
-            {/each}
+                    {/each}
+                </div>
+            {/if}
         </div>
     </div>
 
@@ -88,18 +74,17 @@
 
     interface Option {
         key: OptionKey;
+        /** Says what the drop-down is for. Not shown: the choices speak for themselves. */
         label: string;
         value: string;
-        choices: { id: string; name: string; detail: string }[];
-        /** Too many choices to lay out side by side: always offered as a drop-down. */
-        long: boolean;
+        choices: { id: string; name: string }[];
     }
 
     /** What the lens shows now. */
     export let layer: LayerState;
     /** Asks the lens to switch layer, forecast model or altitude. */
     export let set: (key: OptionKey, value: string) => void;
-    /** For small screens: every option becomes a drop-down, so the layers keep most of the room. */
+    /** For small screens: a tighter header, and the groups on one line to swipe along. */
     export let compact = false;
 
     const groups = layerGroups();
@@ -112,30 +97,21 @@
     // What can be changed about the current layer. An option with nothing to choose is left out.
     $: options = (
         [
-            {
-                key: 'overlay',
-                label: 'Type',
-                value: layer.overlay,
-                choices: variantsOf(layer.overlay).map(({ id, name }) => ({ id, name, detail: '' })),
-                long: false,
-            },
+            { key: 'overlay', label: 'Type', value: layer.overlay, choices: variantsOf(layer.overlay) },
             {
                 key: 'product',
-                label: 'Model',
+                label: 'Forecast model',
                 value: layer.product,
                 choices: layer.products.map(id => ({
                     id,
-                    name: modelName(id),
-                    detail: modelResolution(id),
+                    name: `${modelName(id)} ${modelResolution(id)}`,
                 })),
-                long: false,
             },
             {
                 key: 'level',
                 label: 'Altitude',
                 value: layer.level,
-                choices: layer.levels.map(id => ({ id, name: levelName(id), detail: '' })),
-                long: true,
+                choices: layer.levels.map(id => ({ id, name: levelName(id) })),
             },
         ] as Option[]
     ).filter(option => option.choices.length > 1);
@@ -183,8 +159,8 @@
 
     .picker__thumb {
         flex: none;
-        width: 52px;
-        height: 52px;
+        width: 48px;
+        height: 48px;
         border-radius: 50%;
         object-fit: cover;
         box-shadow: 0 0 0 2px @accent;
@@ -200,27 +176,45 @@
         line-height: 22px;
     }
 
-    // A labelled option: the label keeps its own column when the chips wrap
-    .picker__row {
+    // The layer's options, side by side: a few short drop-downs cost one line of height
+    .picker__options-row {
         display: flex;
-        align-items: baseline;
-        margin-top: 8px;
+        gap: 6px;
+        margin-top: 6px;
     }
 
-    .picker__label {
-        flex: none;
-        width: 52px;
-        font-size: 11px;
-        opacity: 0.6;
+    // Drop-downs dressed as Windy's bubbles: a pill showing the current choice, with a small arrow
+    select {
+        flex: 0 1 auto;
+        min-width: 0;
+        height: 24px;
+        padding: 0 24px 0 10px;
+        border: 0;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.13)
+            url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='white' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+            no-repeat right 9px center / 9px;
+        color: inherit;
+        font-size: 12px;
+        text-overflow: ellipsis;
+        cursor: pointer;
+        outline: none;
+        appearance: none;
+        -webkit-appearance: none;
+
+        &:hover,
+        &:focus-visible {
+            background-color: rgba(255, 255, 255, 0.25);
+        }
     }
 
-    .picker__chips {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
+    // The list that drops down is drawn by the browser; these keep it readable on the dark panel
+    option {
+        background: #4d4d4d;
+        color: #fff;
     }
 
-    // Small screens: a short header of drop-downs, and the groups on one line to swipe along
+    // Small screens: a tighter header, and the groups on one line to swipe along
     .picker--compact {
         .picker__now {
             gap: 10px;
@@ -232,15 +226,9 @@
             height: 36px;
         }
 
-        .picker__row {
-            align-items: center;
-            margin-top: 6px;
-        }
-
         select {
-            flex: 1;
-            min-width: 0;
-            height: 28px;
+            height: 30px;
+            border-radius: 15px;
         }
 
         // Below 16px, iOS zooms the whole page in when one of these takes focus
@@ -264,16 +252,6 @@
         }
     }
 
-    select {
-        height: 22px;
-        padding: 0 4px;
-        border: 0;
-        border-radius: 4px;
-        background: rgba(255, 255, 255, 0.92);
-        color: #333;
-        font-size: 12px;
-    }
-
     .chip {
         height: 22px;
         padding: 0 9px;
@@ -288,12 +266,6 @@
 
         &:hover {
             background: rgba(255, 255, 255, 0.25);
-        }
-
-        small {
-            margin-left: 4px;
-            font-size: 10px;
-            opacity: 0.7;
         }
     }
 

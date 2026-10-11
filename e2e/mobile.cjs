@@ -59,7 +59,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         const panel = document.querySelector('.pip__panel');
         return { panel: q('.pip__panel'), now: q('.picker__now'), search: q('.picker__search'), tabs: q('.picker__tabs'), grid: q('.picker__grid'), tilesVisible: [...document.querySelectorAll('.tile')].filter(t => { const r = t.getBoundingClientRect(), g = document.querySelector('.picker__grid').getBoundingClientRect(); return r.bottom <= g.bottom + 1; }).length, focused: document.activeElement && document.activeElement.className, onTop: panel.contains(document.elementFromPoint(195, panel.getBoundingClientRect().top + 30)), selects: panel.querySelectorAll('select').length, modelChips: panel.querySelectorAll('.picker__now .chip').length };
     });
-    check('picker is compact: drop-downs instead of chips, groups on one line, keyboard not raised', p.selects === 2 && p.modelChips === 0 && p.tabs[3] <= 32 && !/picker__search/.test(p.focused || ''), p);
+    check('picker is compact: drop-downs instead of chips, groups on one line, keyboard not raised', p.selects === 2 && p.modelChips === 0 && p.now[3] <= 90 && p.tabs[3] <= 32 && !/picker__search/.test(p.focused || ''), p);
     check('picker sits right above the lens, on top of Windy\'s own UI, with room for layers', p.panel[1] + p.panel[3] === lens.host[1] - 8 && p.onTop && p.tilesVisible >= 8, p);
     await page.screenshot({ path: OUT + '-picker.png' });
 

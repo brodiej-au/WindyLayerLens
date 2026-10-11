@@ -193,15 +193,17 @@ const check = (name, ok, detail) => {
     let i1 = await inner();
     const opts = await page.evaluate(() => {
         const p = document.querySelector('.pip__panel');
-        return { open: !!p, title: p.querySelector('.picker__title').textContent, models: [...p.querySelectorAll('.picker__row')].filter(r => /Model/.test(r.textContent)).flatMap(r => [...r.querySelectorAll('.chip')].map(b => b.textContent.replace(/\s+/g, ' ').trim() + (b.classList.contains('chip--on') ? '*' : ''))), levels: [...p.querySelectorAll('select option')].map(o => o.textContent.trim()), level: (p.querySelector('select') || {}).value };
+        const choices = label => { const sel = p.querySelector(`select[title="${label}"]`); return sel ? [...sel.options].map(o => o.textContent.trim() + (o.selected ? '*' : '')) : null; };
+        const header = p.querySelector('.picker__now').getBoundingClientRect();
+        return { open: !!p, title: p.querySelector('.picker__title').textContent, models: choices('Forecast model'), levels: choices('Altitude'), chips: p.querySelectorAll('.picker__now .chip').length, headerHeight: Math.round(header.height) };
     });
     c = await chip();
     check('picker: picking a tile switches the PIP layer and stays open', i1.overlay === 'wind' && opts.open && opts.title === 'Wind' && c.name === 'Wind', { i1, c });
-    check('picker: models and altitudes offered for Wind', opts.models.length >= 3 && opts.models.some(m => /^ECMWF ?9km\*$/.test(m)) && opts.levels[0] === 'Surface' && opts.levels.length >= 10 && opts.level === 'surface', opts);
+    check('picker: models and altitudes offered for Wind, on one line of drop-downs', opts.models.length >= 3 && opts.models.includes('ECMWF 9km*') && opts.levels[0] === 'Surface*' && opts.levels.length >= 10 && opts.chips === 0 && opts.headerHeight <= 80, opts);
 
-    await chipBtn('.picker__now', 'GFS').click();
+    await page.selectOption('.pip__panel select[title="Forecast model"]', 'gfs');
     await sleep(2500);
-    await page.selectOption('.pip__panel select', '850h');
+    await page.selectOption('.pip__panel select[title="Altitude"]', '850h');
     await sleep(2000);
     i1 = await inner();
     c = await chip();
@@ -213,10 +215,10 @@ const check = (name, ok, detail) => {
     await sleep(400);
     await tile('Fire danger').click();
     await sleep(2500);
-    const fam = await page.evaluate(() => { const p = document.querySelector('.pip__panel'); return { title: p.querySelector('.picker__title').textContent, variants: [...p.querySelectorAll('.picker__row')].filter(r => /^\s*Type/.test(r.textContent)).flatMap(r => [...r.querySelectorAll('.chip')]).map(b => b.textContent.trim() + (b.classList.contains('chip--on') ? '*' : '')), rows: p.querySelectorAll('.picker__row').length, tiles: [...p.querySelectorAll('.tile__name')].map(t => t.textContent.trim()) }; });
+    const fam = await page.evaluate(() => { const p = document.querySelector('.pip__panel'), sel = p.querySelector('select[title="Type"]'); return { title: p.querySelector('.picker__title').textContent, variants: sel ? [...sel.options].map(o => o.textContent.trim() + (o.selected ? '*' : '')) : [], tiles: [...p.querySelectorAll('.tile__name')].map(t => t.textContent.trim()) }; });
     i1 = await inner();
     check('picker: a family shows its variants', i1.overlay === 'fwi' && fam.title === 'Fire danger' && fam.variants.join('|') === 'Fire spread*|Fuel moisture 10h|Fuel moisture 100h|Fuel moisture 1000h', { i1, fam });
-    await chipBtn('.picker__now', 'Fuel moisture 100h').click();
+    await page.selectOption('.pip__panel select[title="Type"]', 'dfm100h');
     await sleep(2500);
     i1 = await inner();
     c = await chip();
@@ -495,15 +497,41 @@ const check = (name, ok, detail) => {
     });
     check('PIP cannot write shared settings', guard.before === guard.after && guard.innerVal === 'off' && guard.outerVal !== 'off', guard);
 
+    // ---------- time across radar and forecast layers
+    const times = () => page.evaluate(() => { const l = document.querySelector('.pip iframe').contentWindow.W.store, own = ['radar', 'satellite'].includes(l.get('overlay')); return { main: W.store.get('timestamp'), lens: l.get(own ? 'radsatTimestamp' : 'timestamp'), lensLayer: l.get('overlay') }; });
+    const scrubRadar = part => page.evaluate(part => { const c = W.store.get('radarCalendar'); W.store.set('radsatTimestamp', c.timestamps[Math.floor(c.timestamps.length * part)]); }, part);
+    const lensTo = id => page.evaluate(id => document.querySelector('.pip iframe').contentWindow.W.store.set('overlay', id), id);
+    await page.evaluate(() => W.store.set('overlay', 'radar'));
+    await sleep(6000);
+    await scrubRadar(0.4);
+    await sleep(2500);
+    const t1 = await times();
+    check('radar on main: scrubbing moves a forecast layer in the lens', t1.lens === t1.main && t1.lensLayer === 'temp', t1);
+    await lensTo('radar');
+    await sleep(6000);
+    const t2 = await times();
+    await scrubRadar(0.7);
+    await sleep(3000);
+    const t3 = await times();
+    check('radar on main: scrubbing moves radar in the lens', t2.lens === t2.main && t3.lens === t3.main && t3.main !== t2.main && t3.lensLayer === 'radar', { t2, t3 });
+    await lensTo('temp');
+    await sleep(6000);
+    const t4 = await times();
+    check('lens back on a forecast layer keeps the main map\'s time', t4.lens === t4.main && t4.lensLayer === 'temp', t4);
+    await page.evaluate(() => W.store.set('overlay', 'clouds'));
+    await sleep(5000);
+    const t5 = await times();
+    check('main back on a forecast layer: lens still in step', t5.lens === t5.main, t5);
+
     // ---------- remembered state: pick model + altitude, close, reopen
     await page.click('.pip__layer');
     await sleep(300);
     await chipBtn('.picker__tabs', 'Wind').click();
     await tile('Wind').click();
     await sleep(2500);
-    await chipBtn('.picker__now', 'ICON').click();
+    await page.selectOption('.pip__panel select[title="Forecast model"]', 'icon');
     await sleep(2500);
-    await page.selectOption('.pip__panel select', '700h');
+    await page.selectOption('.pip__panel select[title="Altitude"]', '700h');
     await sleep(1500);
     await page.keyboard.press('Escape');
     const savedState = await page.evaluate(name => JSON.parse(localStorage.getItem(name)), NAME);

@@ -7,6 +7,9 @@ type WindyMap = WindyApi['map']['map'];
 const INPUT_EVENTS = ['pointerdown', 'touchstart', 'wheel', 'keydown'] as const;
 const MAP_EVENTS = ['move', 'moveend'] as const;
 
+// Layers whose time is not the forecast time
+const OWN_CLOCK_LAYERS = ['radar', 'satellite'];
+
 const SAME_DEG = 1e-7;
 const SAME_ZOOM = 1e-3;
 
@@ -72,9 +75,47 @@ export function linkMaps(
         MAP_EVENTS.forEach(e => maps[side].on(e, onMapMove[side]));
     }
 
-    const onTimestamp = (ts: number) => pip.store.set('timestamp', ts);
-    main.store.on('timestamp', onTimestamp);
-    onTimestamp(main.store.get('timestamp'));
+    // The lens has no timeline of its own, so its time is pinned to the main map's.
+    //
+    // Radar and satellite run on a clock of their own. Windy copies that clock into `timestamp`,
+    // so the main map's time can always be read there, but only the clock itself moves the
+    // radar or satellite picture.
+    const lensClock = () =>
+        OWN_CLOCK_LAYERS.includes(pip.store.get('overlay')) ? 'radsatTimestamp' : 'timestamp';
+
+    // A time the lens's layer has turned down, such as tomorrow for radar. Asking again for
+    // the same time would only be turned down again.
+    let refused: number | null = null;
+    let settingTime = false;
+
+    const showMainTime = () => {
+        const wanted = main.store.get('timestamp');
+        const clock = lensClock();
+
+        // Setting the time makes Windy report changes of its own. Those are not news.
+        if (settingTime || wanted === refused || pip.store.get(clock) === wanted) {
+            return;
+        }
+        settingTime = true;
+        try {
+            pip.store.set(clock, wanted);
+        } finally {
+            settingTime = false;
+        }
+        refused = pip.store.get(clock) === wanted ? null : wanted;
+    };
+
+    main.store.on('timestamp', showMainTime);
+    // Windy also moves the lens's time itself: it resets it when the layer changes, some of
+    // that after the change has been announced, and it keeps live radar up to date
+    pip.store.on('timestamp', showMainTime);
+    pip.store.on('radsatTimestamp', showMainTime);
+    pip.store.on('overlay', () => {
+        // Another layer may accept a time the last one turned down
+        refused = null;
+        showMainTime();
+    });
+    showMainTime();
 
     const push = () => {
         leader = 'main';
@@ -85,7 +126,7 @@ export function linkMaps(
     return {
         push,
         dispose() {
-            main.store.off('timestamp', onTimestamp);
+            main.store.off('timestamp', showMainTime);
             for (const side of ['main', 'pip'] as const) {
                 INPUT_EVENTS.forEach(e =>
                     docs[side].removeEventListener(e, lead[side], listenerOpts),
