@@ -16,7 +16,7 @@
         "url": "https://github.com/brodiej-au/WindyLayerLens.git"
     },
     "author": "Brodie (appd.com.au)",
-    "license": "ISC",
+    "license": "GPL-3.0",
     "dependencies": {
         "@windycom/plugin-devtools": "^3.0.3"
     }
