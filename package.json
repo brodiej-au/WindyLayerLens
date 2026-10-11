@@ -1,6 +1,6 @@
 {
     "name": "windy-plugin-layer-lens",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Layer Lens, a Windy plugin: a movable lens that shows a second weather layer for the spot it covers",
     "main": "dist/plugin.min.js",
     "type": "module",
