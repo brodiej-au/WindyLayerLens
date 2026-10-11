@@ -1,0 +1,8 @@
+{
+    "name": "layer-lens-e2e",
+    "private": true,
+    "description": "Browser checks for the Layer Lens plugin, run against a real Windy",
+    "dependencies": {
+        "playwright-core": "^1.64.0"
+    }
+}

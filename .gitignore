@@ -1,0 +1,16 @@
+.tmp
+tmp
+.DS_Store
+.vscode
+.rollup.cache
+.secret-api-key.sh
+nohup.out
+node_modules
+package-lock.json
+*.log
+dist/*
+
+
+# Browser checks: their own dependencies, and the screenshots they take
+e2e/node_modules
+e2e/shots
