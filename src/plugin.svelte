@@ -257,6 +257,8 @@
     let destroyed = false;
     let pip: WindyApi | null = null;
     let link: MapLink | null = null;
+    /** Undoes what was attached to the second Windy once it was up. */
+    let detachFromLens: (() => void) | null = null;
     /** What the lens shows. Unknown until the second Windy is up. */
     let layer: LayerState | null = null;
     let status = 'Starting second Windy…';
@@ -582,13 +584,18 @@
 
                 pip = api;
                 layer = readLayerState(api);
-                watchLayerState(api, next => {
+                const stopWatchingLayer = watchLayerState(api, next => {
                     layer = next;
                     save();
                 });
                 link = linkMaps(main, api, pipDoc, zoomShift);
                 // Presses inside the lens's map never reach this window
                 pipDoc.addEventListener('pointerdown', onPointerDown, true);
+
+                detachFromLens = () => {
+                    stopWatchingLayer();
+                    pipDoc.removeEventListener('pointerdown', onPointerDown, true);
+                };
                 status = '';
 
                 introTimer = window.setTimeout(() => {
@@ -607,6 +614,8 @@
         destroyed = true;
         clearTimeout(introTimer);
         cancelAnimationFrame(introFrame);
+        // The second Windy is discarded with its iframe, but nothing of ours is left hanging on it
+        detachFromLens?.();
         link?.dispose();
     });
 </script>

@@ -79,7 +79,5 @@ Bump `version` in both `package.json` and `src/pluginConfig.ts`, commit, then ei
 -   run the `publish-plugin` workflow on GitHub, which needs the key as the repository secret
     `WINDY_API_KEY`.
 
-The plugin is published as private (`private: true` in `src/pluginConfig.ts`): it can be
-installed from its URL but is not listed in Windy's gallery. To list it, set `private: false`,
-publish again, and ask for a review in the
-[Windy plugins forum](https://community.windy.com/category/21/windy-plugins).
+The plugin is published for Windy's gallery (`private: false` in `src/pluginConfig.ts`). A new
+version is offered to people who have it installed, so run the checks above before publishing.

@@ -187,7 +187,14 @@ const WATCHED = [
     'availLevels',
 ] as const;
 
-/** Calls `onChange` with the new state whenever the PIP's layer, or its options, change. */
-export const watchLayerState = (pip: WindyApi, onChange: (state: LayerState) => void): void => {
-    WATCHED.forEach(key => pip.store.on(key, () => onChange(readLayerState(pip))));
+/**
+ * Calls `onChange` with the new state whenever the lens's layer, or its options, change.
+ * Returns a function that stops watching.
+ */
+export const watchLayerState = (
+    pip: WindyApi,
+    onChange: (state: LayerState) => void,
+): (() => void) => {
+    const listeners = WATCHED.map(key => pip.store.on(key, () => onChange(readLayerState(pip))));
+    return () => listeners.forEach(id => pip.store.off(id));
 };

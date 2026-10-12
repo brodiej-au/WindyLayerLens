@@ -110,11 +110,12 @@ export function linkMaps(
     // that after the change has been announced, and it keeps live radar up to date
     pip.store.on('timestamp', showMainTime);
     pip.store.on('radsatTimestamp', showMainTime);
-    pip.store.on('overlay', () => {
+    const onLensLayer = () => {
         // Another layer may accept a time the last one turned down
         refused = null;
         showMainTime();
-    });
+    };
+    pip.store.on('overlay', onLensLayer);
     showMainTime();
 
     const push = () => {
@@ -127,6 +128,9 @@ export function linkMaps(
         push,
         dispose() {
             main.store.off('timestamp', showMainTime);
+            pip.store.off('timestamp', showMainTime);
+            pip.store.off('radsatTimestamp', showMainTime);
+            pip.store.off('overlay', onLensLayer);
             for (const side of ['main', 'pip'] as const) {
                 INPUT_EVENTS.forEach(e =>
                     docs[side].removeEventListener(e, lead[side], listenerOpts),

@@ -2,7 +2,7 @@ import type { ExternalPluginConfig } from '@windy/interfaces';
 
 const config: ExternalPluginConfig = {
     name: 'windy-plugin-layer-lens',
-    version: '0.1.1',
+    version: '0.1.2',
     icon: '🔎',
     title: 'Layer Lens',
     description:
@@ -12,7 +12,7 @@ const config: ExternalPluginConfig = {
     repository: 'https://github.com/brodiej-au/WindyLayerLens',
     desktopUI: 'embedded',
     mobileUI: 'small',
-    private: true,
+    private: false,
 };
 
 export default config;

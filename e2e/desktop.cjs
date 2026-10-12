@@ -170,6 +170,8 @@ const check = (name, ok, detail) => {
     const main0 = await outer();
     await page.click('.pip__layer');
     await sleep(600);
+    // the thumbnails come from windy.com: give them time rather than failing on a slow fetch
+    await page.waitForFunction(() => [...document.querySelectorAll('.pip__panel .tile img')].every(i => i.complete && i.naturalWidth > 0), null, { timeout: 15000 }).catch(() => {});
     const pk = await page.evaluate(() => {
         const p = document.querySelector('.pip__panel'), r = p.getBoundingClientRect(), w = document.querySelector('.pip').getBoundingClientRect();
         const imgs = [...p.querySelectorAll('.tile img')];
@@ -561,7 +563,31 @@ const check = (name, ok, detail) => {
     const restored = { inner: await inner(), chip: await chip(), box: await hostRect(), saved: await savedNow(), seam: await seam() };
     check('reopening restores layer, model, altitude, mode and window', st2 === '' && restored.inner.overlay === 'wind' && restored.inner.product === 'icon' && restored.inner.level === '700h' && restored.chip.model === 'ICON' && restored.saved.mode === 'seamless' && restored.box.join() === boxBefore.join() && seamOk(restored.seam), restored);
 
-    await page.evaluate(() => { window.__pipApp.$destroy(); window.__pipNode.remove(); W.map.map.setView([-30, 150], 6, { animate: false }); });
+    // ---------- closing leaves nothing attached: not to the main Windy, and not to the discarded second one
+    const left = await page.evaluate(async () => {
+        const KEY = 'windy-plugin-layer-lens';
+        const w = document.querySelector('.pip iframe').contentWindow;
+        const lens = { store: w.W.store, map: w.W.map.map, doc: w.document };
+        window.__pipApp.$destroy();
+        window.__pipNode.remove();
+        await new Promise(r => setTimeout(r, 500));
+        const saved = localStorage.getItem(KEY);
+        localStorage.setItem(KEY, 'SENTINEL');
+        const lensTime = lens.store.get('timestamp');
+        // Fire, by hand, everything the plugin listened to. None of it may reach plugin code now.
+        ['overlay', 'product', 'level', 'availProducts', 'visibleProducts', 'availLevels'].forEach(k => lens.store.emit(k, lens.store.get(k)));
+        lens.store.emit('timestamp', lensTime);
+        lens.store.emit('radsatTimestamp', lensTime);
+        lens.map.fire('move');
+        lens.doc.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+        W.store.set('timestamp', W.store.get('timestamp') + 3 * 3600 * 1000);
+        W.map.map.setView([-30, 150], 6, { animate: false });
+        await new Promise(r => setTimeout(r, 500));
+        const out = { savedState: localStorage.getItem(KEY) === 'SENTINEL' ? 'untouched' : 'rewritten', lensTimeFollowedMain: lens.store.get('timestamp') !== lensTime, lensMapFollowedMain: Math.abs(lens.map.getCenter().lat - -30) < 0.01, frames: document.querySelectorAll('iframe').length };
+        localStorage.setItem(KEY, saved);
+        return out;
+    });
+    check('closing removes every listener, on the main Windy and on the discarded second one', left.savedState === 'untouched' && !left.lensTimeFollowedMain && !left.lensMapFollowedMain && left.frames === 0, left);
     await sleep(800);
 
     const lsAfter = await settingsSnapshot();
