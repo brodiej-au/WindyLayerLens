@@ -2,7 +2,7 @@ import type { ExternalPluginConfig } from '@windy/interfaces';
 
 const config: ExternalPluginConfig = {
     name: 'windy-plugin-layer-lens',
-    version: '0.1.2',
+    version: '0.1.3',
     icon: '🔎',
     title: 'Layer Lens',
     description:

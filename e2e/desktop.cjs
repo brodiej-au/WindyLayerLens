@@ -288,6 +288,14 @@ const check = (name, ok, detail) => {
     await chipBtn('.picker__tabs', 'Temperature').click();
     await tile('Temperature').click();
     await sleep(2500);
+    // With the picker still open, pan the lens: the press that closes the picker must not
+    // stop the main map following this very pan (it did until 0.1.3)
+    const mainBefore = await page.evaluate(() => { const c = W.map.map.getCenter(); return [c.lat, c.lng]; });
+    [vx, vy] = await viewCentre();
+    await drag(vx, vy, vx - 90, vy + 50);
+    await sleep(1500);
+    const afterLayerPan = await page.evaluate(([la, lo]) => { const c = W.map.map.getCenter(); return { moved: Math.abs(c.lat - la) > 1e-3 || Math.abs(c.lng - lo) > 1e-3, pickerOpen: !!document.querySelector('.pip__panel') }; }, mainBefore);
+    check('after a layer change, the first pan of the lens moves the main map', afterLayerPan.moved && !afterLayerPan.pickerOpen, afterLayerPan);
     await page.keyboard.press('Escape');
     i1 = await inner();
     check('PIP on Temperature for the view-mode checks', i1.overlay === 'temp', i1);

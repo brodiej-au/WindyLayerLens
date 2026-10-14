@@ -118,10 +118,10 @@ export function linkMaps(
     pip.store.on('overlay', onLensLayer);
     showMainTime();
 
-    const push = () => {
-        leader = 'main';
-        follow('main');
-    };
+    // Re-applies the main map's view WITHOUT taking the lead from the lens. This runs after
+    // any change on the page, including the click inside the lens that closes an open
+    // panel; taking the lead there would make the main map ignore the pan that follows.
+    const push = () => follow('main');
     push();
 
     return {
