@@ -435,6 +435,28 @@ const check = (name, ok, detail) => {
     await sleep(3000);
     const s6 = await seam();
     check('Seamless: zooming inside the PIP zooms main with it', seamOk(s6) && s6.main[2] !== s5.main[2], s6);
+
+    // Windy's menu and settings panes slide the whole main map aside (until 0.1.4 the lens stayed put)
+    const mainLeft = () => page.evaluate(() => Math.round(W.map.map.getContainer().getBoundingClientRect().left));
+    // Waits for the map to slide and come to rest (the pane may take a while to load first).
+    // The lens is also measured the first time the map is seen to have moved, usually mid-slide.
+    const slide = async from => {
+        let mid = null, last = from, still = 0;
+        for (let t = 0; t < 15000 && (last === from || still < 10); t += 50) {
+            const left = await mainLeft();
+            if (left === last) still++;
+            else { still = 0; mid = mid || { left, seam: await seam() }; }
+            last = left;
+            await sleep(50);
+        }
+        return { left: last, mid, seam: await seam() };
+    };
+    await page.evaluate(() => W.broadcast.emit('rqstOpen', 'menu'));
+    const paneOpen = await slide(0);
+    await page.evaluate(() => W.broadcast.emit('rqstClose', 'menu'));
+    const paneShut = await slide(paneOpen.left);
+    const midOk = s => s.mid && seamOk(s.mid.seam);
+    check('Seamless: stays aligned while Windy\'s menu pushes the map aside, and after it closes', paneOpen.left < -100 && seamOk(paneOpen.seam) && paneShut.left === 0 && seamOk(paneShut.seam) && midOk(paneOpen) && midOk(paneShut), { paneOpen, paneShut });
     await sleep(2500);
     await page.screenshot({ path: SHOT + '-seamless.png' });
 

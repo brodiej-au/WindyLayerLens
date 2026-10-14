@@ -34,8 +34,9 @@ the second instance's `W.store` and map directly.
     of Windy's code runs.
 -   **Seamless needs no map movement.** In that view the second map is as big as the main map
     and lies exactly over it, and the window just reveals part of it. Moving the lens therefore
-    moves nothing on that map, so its wind animation keeps running. In Full view the second map
-    is the size of the lens and zoomed out to fit.
+    moves nothing on that map, so its wind animation keeps running. When Windy slides its map
+    aside for the menu or settings, the second map slides with it (`src/mapBox.ts`). In Full
+    view the second map is the size of the lens and zoomed out to fit.
 -   **Sync** (`src/sync.ts`) keeps both maps on one centre. Only the map the user last touched
     is allowed to lead, which stops the two chasing each other.
 

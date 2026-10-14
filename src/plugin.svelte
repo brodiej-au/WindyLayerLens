@@ -128,6 +128,7 @@
     import { layerItem, modelName, readLayerState, watchLayerState } from './layers';
     import { connectPip, pipUrl } from './pipWindow';
     import { linkMaps } from './sync';
+    import { watchMapBox } from './mapBox';
     import { pointerDrag } from './pointerDrag';
 
     import type { LayerState } from './layers';
@@ -259,6 +260,7 @@
     let link: MapLink | null = null;
     /** Undoes what was attached to the second Windy once it was up. */
     let detachFromLens: (() => void) | null = null;
+    let stopWatchingMap: (() => void) | null = null;
     /** What the lens shows. Unknown until the second Windy is up. */
     let layer: LayerState | null = null;
     let status = 'Starting second Windy…';
@@ -574,6 +576,8 @@
             document.body.appendChild(root);
         }
         mounted = true;
+        // Windy moves the main map aside for some of its panes, and the lens has to move with it
+        stopWatchingMap = watchMapBox(map.getContainer(), arrange);
 
         connectPip(iframe)
             .then(api => {
@@ -614,6 +618,7 @@
         destroyed = true;
         clearTimeout(introTimer);
         cancelAnimationFrame(introFrame);
+        stopWatchingMap?.();
         // The second Windy is discarded with its iframe, but nothing of ours is left hanging on it
         detachFromLens?.();
         link?.dispose();
