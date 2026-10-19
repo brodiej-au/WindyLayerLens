@@ -12,9 +12,13 @@ it covers, with its own forecast model and altitude.
     from any edge or corner, or with the knob on the rim of a round lens.
 -   The **layer button** opens the picker: Windy's own layers with their thumbnails, grouped and
     searchable, plus the forecast models and altitudes available for the layer shown.
--   The **⋯ menu** switches between two views and two shapes:
+-   The **⋯ menu** switches between two views and two shapes, and sets the lens's opacity:
     -   _Seamless_: the lens shows the part of the main map it covers.
     -   _Full_: the lens shows the whole view of the main map, zoomed out to fit.
+    -   _Opacity_: below 100% the main map shows through, so the two layers blend.
+-   The **cover button** (four corners) spreads the lens over the whole map, under Windy's
+    own controls. The map then works as usual and the lens follows it. The same button
+    gathers it back into its window. Each keeps its own opacity.
 -   Panning or zooming either map moves the other. The lens follows the main map's forecast time.
 
 On phones and tablets the lens does not float. It is docked in the strip Windy gives small
@@ -57,8 +61,8 @@ through a Cloudflare quick tunnel; use the URL it prints instead.
 ## Checks
 
 `e2e/` drives a real Windy in headless Chromium and checks the lens end to end: syncing in both
-views, the layer picker, shapes, the intro, and that the lens writes none of the user's Windy
-settings. Windy's own plugin loader needs a logged-in account, so the checks mount the plugin
+views, the layer picker, shapes, opacity, covering the map, the intro, that the lens writes none
+of the user's Windy settings, and that closing it leaves no listener, timer or panel behind. Windy's own plugin loader needs a logged-in account, so the checks mount the plugin
 the way Windy does instead.
 
 ```sh

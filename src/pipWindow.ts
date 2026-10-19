@@ -30,6 +30,9 @@ export function pipUrl(
     return `${location.origin}/?${[...start, ...view].join(',')}`;
 }
 
+// Windy answers a click on its map by opening the picker there, or a place's forecast
+const swallowClick = (e: Event) => e.stopPropagation();
+
 /**
  * Turns the second Windy into a map that is only for looking at: nothing but the map
  * stays on screen, and clicking it does nothing. Dragging and zooming still work.
@@ -42,9 +45,12 @@ function quieten(doc: Document): void {
     style.id = STYLE_ID;
     style.textContent = HIDE_CHROME_CSS;
     doc.head.appendChild(style);
+    doc.addEventListener('click', swallowClick, true);
+}
 
-    // Windy answers a click on its map by opening the picker there, or a place's forecast
-    doc.addEventListener('click', e => e.stopPropagation(), true);
+/** Takes back the listener `connectPip` put on the second Windy's page. */
+export function releasePip(doc: Document): void {
+    doc.removeEventListener('click', swallowClick, true);
 }
 
 /**

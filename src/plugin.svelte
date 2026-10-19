@@ -9,11 +9,12 @@
         class="pip dark-content"
         class:pip--floating={floating}
         class:pip--circle={round}
+        class:pip--cover={covering}
         class:pip--dragging={dragging}
         style={windowStyle}
         bind:this={root}
     >
-        <div class="pip__bar" use:pointerDrag={moveDrag}>
+        <div class="pip__bar" use:pointerDrag={moveDrag} bind:this={bar}>
             <span class="pip__title">
                 <svg viewBox="0 0 16 16" aria-hidden="true">
                     <circle cx="6.75" cy="6.75" r="4.75" />
@@ -48,10 +49,26 @@
                 {/if}
                 <span class="pip__caret">▾</span>
             </button>
+            {#if floating}
+                <button
+                    class="pip__icon pip__cover"
+                    class:on={covering}
+                    title={covering ? 'Back to a lens' : 'Cover the whole map'}
+                    on:click={() => setCovering(!covering)}
+                >
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                        {#if covering}
+                            <path d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4" />
+                        {:else}
+                            <path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" />
+                        {/if}
+                    </svg>
+                </button>
+            {/if}
             <button
-                class="pip__icon"
+                class="pip__icon pip__options"
                 class:on={openPanel === 'options'}
-                title="View, shape and about"
+                title="View, shape, opacity and about"
                 bind:this={optionsButton}
                 on:click={() => openPanelNamed(openPanel === 'options' ? null : 'options')}
             >
@@ -60,7 +77,12 @@
             <button class="pip__icon" title="Close" on:click={close}>✕</button>
         </div>
         <div class="pip__view" bind:this={view}>
-            <iframe bind:this={iframe} {src} title={config.title}></iframe>
+            <iframe
+                bind:this={iframe}
+                {src}
+                title={config.title}
+                style:opacity={floating ? shownOpacity : null}
+            ></iframe>
             {#if status}
                 <div class="pip__status">{status}</div>
             {/if}
@@ -77,7 +99,7 @@
                     <path d="M4 8 8 4M8 4H5.2M8 4v2.8M4 8h2.8M4 8V5.2" />
                 </svg>
             </div>
-        {:else if floating}
+        {:else if floating && !covering}
             {#each RESIZE_GRIPS as edges}
                 <div class="pip__grip pip__grip--{edges}" use:pointerDrag={resizeDrag(edges)}>
                     {#if edges === 'se'}
@@ -96,11 +118,15 @@
             <div class="pip__panel dark-content" style={panelStyle} bind:this={panel} use:toBody>
                 <OptionsMenu
                     title={config.title}
+                    version={config.version}
                     {mode}
                     {shape}
-                    canReshape={floating}
+                    {floating}
+                    {covering}
+                    opacity={shownOpacity}
                     {setMode}
                     {setShape}
+                    {setOpacity}
                     about={() => openPanelNamed('about')}
                 />
             </div>
@@ -126,7 +152,7 @@
     import OptionsMenu from './OptionsMenu.svelte';
     import config from './pluginConfig';
     import { layerItem, modelName, readLayerState, watchLayerState } from './layers';
-    import { connectPip, pipUrl } from './pipWindow';
+    import { connectPip, pipUrl, releasePip } from './pipWindow';
     import { linkMaps } from './sync';
     import { watchMapBox } from './mapBox';
     import { pointerDrag } from './pointerDrag';
@@ -149,6 +175,12 @@
 
     type Panel = 'layers' | 'options' | 'about' | null;
 
+    /** How much of the lens's map shows, from 0.1 to 1. The rest is the main map underneath. */
+    interface Opacity {
+        lens: number;
+        cover: number;
+    }
+
     interface Saved {
         overlay: Overlays;
         product: Products;
@@ -156,6 +188,8 @@
         mode: Mode;
         shape: Shape;
         box: Box;
+        cover: boolean;
+        opacity: Opacity;
     }
 
     // Keep in step with the bar's height in the styles below
@@ -174,7 +208,10 @@
     // On a phone the picker leaves more of the map in view
     const PICKER_HEIGHT_COMPACT = 420;
     const OPTIONS_WIDTH = 230;
-    const OPTIONS_HEIGHT = 112;
+    const OPTIONS_HEIGHT = 144;
+
+    const DEFAULT_OPACITY: Opacity = { lens: 1, cover: 1 };
+    const MIN_OPACITY = 0.1;
     const PANEL_GAP = 8;
 
     // The intro: how long after the lens is up it starts, how long the pointer is shown
@@ -220,6 +257,9 @@
 
     let mode: Mode = saved.mode ?? 'seamless';
     let shape: Shape = saved.shape ?? 'circle';
+    /** Whether the lens is spread over the whole map. Only a lens that floats can be. */
+    let covering = floating && (saved.cover ?? false);
+    let opacity: Opacity = { ...DEFAULT_OPACITY, ...saved.opacity };
 
     const fitToViewport = ({ left, top, width, height }: Box): Box => {
         const min = MIN_SIZE[shape];
@@ -249,6 +289,7 @@
     const src = pipUrl(startLayer, lat, lng, map.getZoom());
 
     let root: HTMLDivElement;
+    let bar: HTMLDivElement;
     let view: HTMLDivElement;
     let iframe: HTMLIFrameElement;
     let layerButton: HTMLButtonElement;
@@ -274,7 +315,8 @@
     let introFrame = 0;
     let introTimer = 0;
 
-    $: round = floating && shape === 'circle';
+    $: round = floating && shape === 'circle' && !covering;
+    $: shownOpacity = covering ? opacity.cover : opacity.lens;
 
     /** Diameter of the round lens that fits a window of this size. */
     const lensSize = ({ width, height }: Size) => Math.min(width, height - BAR_HEIGHT);
@@ -282,7 +324,16 @@
     const save = () => {
         try {
             const { overlay, product, level } = layer ?? startLayer;
-            const state: Partial<Saved> = { overlay, product, level, mode, shape, box };
+            const state: Partial<Saved> = {
+                overlay,
+                product,
+                level,
+                mode,
+                shape,
+                box,
+                cover: covering,
+                opacity,
+            };
             localStorage.setItem(config.name, JSON.stringify(state));
         } catch (e) {
             // Storage unavailable: the lens just starts from defaults next time
@@ -294,9 +345,12 @@
         pip?.store.set(key, value as never);
     };
 
+    // A lens over the whole map is seamless whichever view is chosen: it is as big as the map
+    const seamless = () => mode === 'seamless' || covering;
+
     /** How much further out than the main map the lens is zoomed. */
     const zoomShift = (): number => {
-        if (mode === 'seamless') {
+        if (seamless()) {
             return 0;
         }
         // Full: zoomed out until the whole main view fits in the lens
@@ -317,7 +371,7 @@
     const arrange = () => {
         const place = { left: '0', top: '0', width: '100%', height: '100%' };
 
-        if (mode === 'seamless') {
+        if (seamless()) {
             const mainView = map.getContainer().getBoundingClientRect();
             const lens = view.getBoundingClientRect();
             Object.assign(place, {
@@ -355,6 +409,21 @@
         save();
     };
 
+    /**
+     * Spreads the lens over the whole map, or gathers it back into its window. Over the whole
+     * map it lies under Windy's own UI and lets every press through to the main map, which the
+     * lens then follows; its bar floats on its own where the window's bar was.
+     */
+    const setCovering = (next: boolean) => {
+        covering = next;
+        save();
+    };
+
+    const setOpacity = (value: number) => {
+        opacity = { ...opacity, [covering ? 'cover' : 'lens']: clamp(value, MIN_OPACITY, 1) };
+        save();
+    };
+
     const close = () => bcast.emit('rqstClose', config.name);
 
     const closePanel = () => (openPanel = null);
@@ -362,6 +431,10 @@
     /** Svelte action: moves a panel to the end of the page, clear of whatever would cover or clip it. */
     const toBody = (node: HTMLElement) => {
         document.body.appendChild(node);
+        return {
+            // Svelte takes away only the window when the lens closes, and the panel is no longer in it
+            destroy: () => node.remove(),
+        };
     };
 
     const placeOptions = (): string => {
@@ -396,8 +469,19 @@
             return `left:${(innerWidth - w) / 2}px;top:${y}px;width:${w}px;height:${h}px`;
         }
 
-        const { left, top, width } = box;
         const h = Math.min(PICKER_HEIGHT, innerHeight - 2 * PANEL_GAP);
+
+        if (covering) {
+            // Only the bar is left of the window: the picker drops from it, or rises from it
+            // when the bar sits low on the screen
+            const { left, top, bottom } = bar.getBoundingClientRect();
+            const below = bottom + PANEL_GAP;
+            const y = below + h + PANEL_GAP <= innerHeight ? below : top - PANEL_GAP - h;
+            const x = clamp(left, PANEL_GAP, innerWidth - w - PANEL_GAP);
+            return `left:${x}px;top:${clamp(y, PANEL_GAP, innerHeight - h - PANEL_GAP)}px;width:${w}px;height:${h}px`;
+        }
+
+        const { left, top, width } = box;
         const onRight = left + width + PANEL_GAP;
         const onLeft = left - PANEL_GAP - w;
 
@@ -547,10 +631,13 @@
     };
 
     // The window follows `box`. `--lens` is the diameter of the round lens that fits in it.
-    $: windowStyle = floating
-        ? `left:${box.left}px;top:${box.top}px;width:${box.width}px;height:${box.height}px;` +
-          `--lens:${lensSize(box)}px`
-        : '';
+    // Over the whole map only the bar follows it, centred where the window's bar was.
+    $: windowStyle = !floating
+        ? ''
+        : covering
+          ? `--bar-x:${box.left + box.width / 2}px;--bar-y:${box.top}px`
+          : `left:${box.left}px;top:${box.top}px;width:${box.width}px;height:${box.height}px;` +
+            `--lens:${lensSize(box)}px`;
 
     // Runs once the page shows the current state, so the second map is always measured against
     // the lens as it really is: after a move, a resize, or a change of shape or mode
@@ -573,7 +660,10 @@
         if (floating) {
             // Parts of Windy's UI (search, forecast card) are drawn over that container whatever
             // its z-index. A window that can be dragged anywhere has to live outside it.
-            document.body.appendChild(root);
+            // It goes straight after the main map: Windy stacks its UI by page order, so a lens
+            // spread over the whole map stays under that UI, while the window is raised above it.
+            const mapBlock = [...document.body.children].find(el => el.contains(map.getContainer()));
+            document.body.insertBefore(root, mapBlock?.nextSibling ?? null);
         }
         mounted = true;
         // Windy moves the main map aside for some of its panes, and the lens has to move with it
@@ -599,12 +689,13 @@
                 detachFromLens = () => {
                     stopWatchingLayer();
                     pipDoc.removeEventListener('pointerdown', onPointerDown, true);
+                    releasePip(pipDoc);
                 };
                 status = '';
 
                 introTimer = window.setTimeout(() => {
                     // Moving the lens only shows something new in seamless mode
-                    if (floating && mode === 'seamless' && !userActed) {
+                    if (floating && mode === 'seamless' && !covering && !userActed) {
                         playIntro();
                     }
                 }, INTRO_START);
@@ -665,9 +756,38 @@
         z-index: 50;
         overflow: hidden;
         border-radius: 8px;
-        background-color: @surface;
         color: #fff;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+
+        // Only the bar is filled in, so the main map shows through a see-through lens
+        .pip__bar {
+            background-color: @surface;
+        }
+    }
+
+    // The bar alone, as a pill of controls: over a round lens, or over the whole map
+    .pill() {
+        gap: 4px;
+        height: @bar - 4px;
+        padding: 0 6px;
+        border-radius: (@bar - 4px) / 2;
+        background-color: @surface;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+
+        // Only the mark is left of the title, as something to drag the lens by
+        .pip__title {
+            flex: none;
+            width: 22px;
+            justify-content: center;
+
+            span {
+                display: none;
+            }
+
+            .pip__pointer {
+                left: 8px;
+            }
+        }
     }
 
     .pip__bar {
@@ -800,6 +920,18 @@
     .pip__bar .pip__icon {
         width: 22px;
         padding: 0;
+
+        svg {
+            display: block;
+            width: 12px;
+            height: 12px;
+            margin: auto;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 1.6;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
     }
 
     .pip__view {
@@ -966,35 +1098,15 @@
         }
 
         .pip__bar {
+            .pill();
             align-self: center;
-            gap: 4px;
-            height: @bar - 4px;
             margin-bottom: 4px;
-            padding: 0 6px;
-            border-radius: (@bar - 4px) / 2;
-            background-color: @surface;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
         }
 
         // The caption has to fit across the circle, which narrows towards the rim
         .pip__hint {
             bottom: 20%;
             max-width: 75%;
-        }
-
-        // Only the mark is left of the title, as something to drag the lens by
-        .pip__title {
-            flex: none;
-            width: 22px;
-            justify-content: center;
-
-            span {
-                display: none;
-            }
-
-            .pip__pointer {
-                left: 8px;
-            }
         }
 
         .pip__view {
@@ -1009,6 +1121,41 @@
                 0 0 0 3px @surface,
                 0 0 0 4px rgba(255, 255, 255, 0.35),
                 0 6px 24px rgba(0, 0, 0, 0.5);
+        }
+    }
+
+    // Over the whole map the window itself goes, leaving its two parts to be placed apart
+    .pip--cover {
+        display: contents;
+
+        .pip__bar {
+            .pill();
+            position: fixed;
+            left: var(--bar-x);
+            top: var(--bar-y);
+            // Above Windy's UI, like the window
+            z-index: 50;
+            transform: translateX(-50%);
+        }
+
+        // No z-index: placed straight after the main map on the page, it is drawn over that
+        // map and under the Windy UI that follows
+        .pip__view {
+            position: fixed;
+            inset: 0;
+            // Every press goes through to the main map, and the lens follows it
+            pointer-events: none;
+        }
+
+        // Starting up takes a while: say so without hiding the map
+        .pip__status {
+            inset: auto;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            padding: 8px 14px;
+            border-radius: 10px;
+            background: rgba(30, 30, 30, 0.85);
         }
     }
 

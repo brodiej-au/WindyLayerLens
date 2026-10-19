@@ -13,8 +13,15 @@ export interface PointerDragHandlers {
  * Drags that start on a form control inside `node` are left alone.
  */
 export function pointerDrag(node: HTMLElement, handlers: PointerDragHandlers) {
+    /** Ends the drag in progress, if there is one. */
+    let endDrag: (() => void) | null = null;
+
     const onDown = (down: PointerEvent) => {
-        if (down.button !== 0 || (down.target as Element).closest('select, button, input')) {
+        if (
+            endDrag ||
+            down.button !== 0 ||
+            (down.target as Element).closest('select, button, input')
+        ) {
             return;
         }
         down.preventDefault();
@@ -27,12 +34,14 @@ export function pointerDrag(node: HTMLElement, handlers: PointerDragHandlers) {
             node.removeEventListener('pointermove', onMove);
             node.removeEventListener('pointerup', onUp);
             node.removeEventListener('pointercancel', onUp);
+            endDrag = null;
             handlers.end();
         };
 
         node.addEventListener('pointermove', onMove);
         node.addEventListener('pointerup', onUp);
         node.addEventListener('pointercancel', onUp);
+        endDrag = onUp;
     };
 
     node.addEventListener('pointerdown', onDown);
@@ -40,6 +49,7 @@ export function pointerDrag(node: HTMLElement, handlers: PointerDragHandlers) {
     return {
         destroy() {
             node.removeEventListener('pointerdown', onDown);
+            endDrag?.();
         },
     };
 }

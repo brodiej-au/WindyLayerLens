@@ -22,6 +22,16 @@ npm run build
 
 cd dist
 
+# What Windy publishes, and the plugin shows in its menu, is the version in src/pluginConfig.ts
+node -e "
+const shown = require('./plugin.json').version;
+const pkg = require('../package.json').version;
+if (shown !== pkg) {
+    console.error('Version mismatch: src/pluginConfig.ts has ' + shown + ', package.json has ' + pkg);
+    process.exit(1);
+}
+"
+
 echo "Creating plugin archive..."
 REPOSITORY="$REPOSITORY" OWNER="$OWNER" SHA="$SHA" node -e "
 const fs = require('fs');

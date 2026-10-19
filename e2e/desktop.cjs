@@ -112,7 +112,7 @@ const check = (name, ok, detail) => {
     const chip = () => page.evaluate(() => { const b = document.querySelector('.pip__layer'); return { name: b.querySelector('.pip__layer-name').textContent.trim(), model: (b.querySelector('small') || {}).textContent, img: (b.querySelector('img') || {}).naturalWidth }; });
     const tile = name => page.locator('.tile', { hasText: new RegExp('^\\s*(NEW|MBLUE)?\\s*' + name + '\\s*$') }).first();
     const chipBtn = (scope, name) => page.locator(scope + ' .chip', { hasText: name }).first();
-    const optionsButton = '.pip__bar .pip__icon:nth-of-type(2)';
+    const optionsButton = '.pip__options';
     const pickOption = async name => {
         await page.click(optionsButton);
         await page.locator('.menu__choice button', { hasText: name }).click();
@@ -153,15 +153,15 @@ const check = (name, ok, detail) => {
             top: document.elementFromPoint(r.left + 100, r.top + 100) === fr,
             title: n.querySelector('.pip__title').textContent.replace(/\s+/g, ' ').trim(), logo: !!n.querySelector('.pip__title svg'), barHeight: Math.round(bar.getBoundingClientRect().height),
             zoomButtons: n.querySelectorAll('.pip__zoom').length, legend: n.querySelectorAll('.pip__legend').length, selects: bar.querySelectorAll('select').length,
-            icons: [...bar.querySelectorAll('.pip__icon')].map(b => b.textContent.trim()), modeButtons: n.querySelectorAll('.pip__modes').length,
+            icons: [...bar.querySelectorAll('.pip__icon')].map(b => b.textContent.trim() || (b.querySelector('svg') ? 'svg' : '')), modeButtons: n.querySelectorAll('.pip__modes').length,
             seGrip: !!n.querySelector('.pip__grip--se svg'), titleFont: getComputedStyle(n.querySelector('.pip__title')).fontFamily, fontLoaded: document.fonts.check('17px bariolmedium'),
-            grips: n.querySelectorAll('.pip__grip').length,
+            grips: n.querySelectorAll('.pip__grip').length, coverButton: !!bar.querySelector('.pip__cover svg'),
             visibleInner: [...w.document.body.children].filter(e => getComputedStyle(e).display !== 'none').map(e => e.id || e.tagName),
         };
     });
     check('PIP floats outside Windy\'s container', layout.pos === 'fixed' && layout.parent === 'BODY' && layout.hostDisplay === 'none' && layout.top, layout);
     check('toolbar: title shown, zoom buttons and legend gone', layout.title === 'Layer Lens' && layout.logo && layout.zoomButtons === 0 && layout.legend === 0 && layout.selects === 0 && layout.barHeight === 32, layout);
-    check('toolbar: view modes moved into the ⋯ menu, resize mark in the corner, title in Windy\'s typeface', layout.icons.join() === '⋯,✕' && layout.modeButtons === 0 && layout.seGrip && /bariolmedium/.test(layout.titleFont) && layout.fontLoaded, { icons: layout.icons, seGrip: layout.seGrip, titleFont: layout.titleFont });
+    check('toolbar: view modes moved into the ⋯ menu, resize mark in the corner, title in Windy\'s typeface', layout.icons.join() === 'svg,⋯,✕' && layout.coverButton && layout.modeButtons === 0 && layout.seGrip && /bariolmedium/.test(layout.titleFont) && layout.fontLoaded, { icons: layout.icons, seGrip: layout.seGrip, titleFont: layout.titleFont });
     check('inner map fills the PIP view, chrome hidden', layout.innerMap.join() === [0, 0, ...layout.iframe].join() && layout.visibleInner.join() === 'map-container', layout);
     let c = await chip();
     check('toolbar: layer chip shows a layer that stands out, with model and thumbnail', c.name === 'Temperature' && c.model === 'ECMWF' && c.img > 0, c);
@@ -509,6 +509,79 @@ const check = (name, ok, detail) => {
     const sb = await seam();
     check('window drags down until it touches the bottom edge, still aligned', rb[1] + rb[3] === vp[1] && seamOk(sb), { rb, vp, sb });
 
+    // ---------- opacity: the main map shows through the lens
+    const lensBox = await hostRect();
+    await page.click(optionsButton);
+    await page.locator('.menu__slider').fill('30');
+    await sleep(400);
+    const faded = await page.evaluate(() => {
+        const n = document.querySelector('.pip');
+        return { iframe: getComputedStyle(n.querySelector('iframe')).opacity, label: document.querySelector('.menu__value').textContent, windowFill: getComputedStyle(n).backgroundColor, barFill: getComputedStyle(n.querySelector('.pip__bar')).backgroundColor, rows: [...document.querySelectorAll('.menu__label')].map(l => l.textContent), version: document.querySelector('.menu__version').textContent, saved: JSON.parse(localStorage.getItem('windy-plugin-layer-lens')).opacity };
+    });
+    await page.keyboard.press('Escape');
+    const pkgVersion = require(__dirname + '/../package.json').version;
+    check('menu: shows the version, the same as package.json', faded.version === 'v' + pkgVersion, { shown: faded.version, pkgVersion });
+    check('opacity: the lens fades to 30% and nothing but the map is behind it', faded.iframe === '0.3' && faded.label === '30%' && faded.windowFill === 'rgba(0, 0, 0, 0)' && faded.barFill !== 'rgba(0, 0, 0, 0)' && faded.rows.join() === 'View,Shape,Opacity' && faded.saved.lens === 0.3, faded);
+    await sleep(1500);
+    await page.screenshot({ path: SHOT + '-opacity.png' });
+
+    // ---------- covering the whole map, from Full view: over the whole map it is seamless all the same
+    await pickOption('Full');
+    await sleep(800);
+    await page.click('.pip__cover');
+    await sleep(1500);
+    const cover = await page.evaluate(() => {
+        const n = document.querySelector('.pip'), v = n.querySelector('.pip__view'), f = n.querySelector('iframe'), bar = n.querySelector('.pip__bar');
+        const vr = v.getBoundingClientRect(), br = bar.getBoundingClientRect();
+        const name = e => e ? `${e.tagName}.${String(e.className).split(' ')[0]}` : null;
+        const mid = [innerWidth / 2, innerHeight / 2];
+        const press = document.elementFromPoint(...mid);
+        // Which is drawn on top, the lens or Windy's UI: hit-test the lens as if it took presses
+        v.style.pointerEvents = 'auto';
+        const s = document.querySelector('#search').getBoundingClientRect();
+        const overSearch = document.elementFromPoint(s.left + 30, s.top + 20);
+        const overMap = document.elementFromPoint(...mid);
+        v.style.pointerEvents = '';
+        return {
+            view: [vr.left, vr.top, vr.width, vr.height].map(Math.round), viewport: [innerWidth, innerHeight], opacity: getComputedStyle(f).opacity,
+            press: name(press), searchOnTop: !v.contains(overSearch), lensOverMap: overMap === f,
+            bar: [br.left + br.width / 2, br.top].map(Math.round), barOnTop: bar.contains(document.elementFromPoint(br.left + 10, br.top + br.height / 2)),
+            grips: n.querySelectorAll('.pip__grip, .pip__knob').length, saved: JSON.parse(localStorage.getItem('windy-plugin-layer-lens')),
+        };
+    });
+    const cv0 = await seam();
+    check('cover: the lens lies over the whole map at full strength, under Windy\'s UI, aligned', cover.view.join() === [0, 0, ...cover.viewport].join() && cover.opacity === '1' && cover.searchOnTop && cover.lensOverMap && seamOk(cv0) && cover.grips === 0 && cover.saved.cover === true, { cover, cv0 });
+    check('cover: presses reach the main map; the bar floats where the window\'s bar was', /maplibregl-canvas/.test(cover.press) && cover.barOnTop && Math.abs(cover.bar[0] - (lensBox[0] + lensBox[2] / 2)) <= 1 && cover.bar[1] === lensBox[1], { press: cover.press, bar: cover.bar, lensBox });
+    await page.screenshot({ path: SHOT + '-cover.png' });
+    await drag(700, 400, 610, 340);
+    await sleep(2500);
+    const cv1 = await seam();
+    check('cover: dragging the map moves both, still aligned', seamOk(cv1) && cv1.main.join() !== cv0.main.join(), cv1);
+    await page.click(optionsButton);
+    const coverMenu = await page.evaluate(() => ({ rows: [...document.querySelectorAll('.menu__label')].map(l => l.textContent), choices: [...document.querySelectorAll('.menu__choice button')].map(b => (b.disabled ? 'off:' : '') + b.textContent.trim() + (b.classList.contains('on') ? '*' : '')) }));
+    await page.locator('.menu__slider').fill('70');
+    await sleep(300);
+    const coverOpacity = await page.evaluate(() => getComputedStyle(document.querySelector('.pip iframe')).opacity);
+    await page.keyboard.press('Escape');
+    check('cover: view and shape shown off, as the lens is now (seamless, no shape), the window\'s Full view kept; opacity kept apart from the lens\'s', coverMenu.rows.join() === 'View,Shape,Opacity' && coverMenu.choices.join() === 'off:Seamless*,off:Full,off:Rectangle,off:Circle' && coverOpacity === '0.7' && (await savedNow()).mode === 'full', { coverMenu, coverOpacity });
+    await page.click('.pip__layer');
+    await sleep(600);
+    const coverPicker = await page.evaluate(() => { const p = document.querySelector('.pip__panel').getBoundingClientRect(), b = document.querySelector('.pip__bar').getBoundingClientRect(); return { onScreen: p.left >= 0 && p.top >= 0 && p.right <= innerWidth && p.bottom <= innerHeight, byBar: p.top >= b.bottom || p.bottom <= b.top }; });
+    await page.keyboard.press('Escape');
+    check('cover: the layer picker opens from the bar, on screen', coverPicker.onScreen && coverPicker.byBar, coverPicker);
+    await page.click('.pip__cover');
+    await sleep(1500);
+    const backFull = { mode: (await savedNow()).mode, fit: await full() };
+    check('cover: going back returns to the Full view it came from', backFull.mode === 'full' && fullOk(backFull.fit), backFull);
+    await pickOption('Seamless');
+    await sleep(1500);
+    const back = { box: await hostRect(), seam: await seam(), opacity: await page.evaluate(() => getComputedStyle(document.querySelector('.pip iframe')).opacity), saved: await savedNow() };
+    check('cover: going back gives the lens its window, place and opacity again', back.box.join() === lensBox.join() && seamOk(back.seam) && back.opacity === '0.3' && back.saved.cover === false && back.saved.opacity.cover === 0.7, back);
+    await page.click(optionsButton);
+    await page.locator('.menu__slider').fill('100');
+    await page.keyboard.press('Escape');
+    await sleep(500);
+
     // ---------- isolation, time, settings
     await page.evaluate(() => W.store.set('overlay', 'clouds'));
     await sleep(2000);
@@ -594,13 +667,62 @@ const check = (name, ok, detail) => {
     check('reopening restores layer, model, altitude, mode and window', st2 === '' && restored.inner.overlay === 'wind' && restored.inner.product === 'icon' && restored.inner.level === '700h' && restored.chip.model === 'ICON' && restored.saved.mode === 'seamless' && restored.box.join() === boxBefore.join() && seamOk(restored.seam), restored);
 
     // ---------- closing leaves nothing attached: not to the main Windy, and not to the discarded second one
-    const left = await page.evaluate(async () => {
+    // Closed with a panel open, as Windy can close a plugin at any moment
+    await page.click(optionsButton);
+    await page.waitForSelector('.pip__panel');
+    // Chrome's debugger tells which script each event listener comes from
+    const cdp = await page.context().newCDPSession(page);
+    const pluginScripts = new Set();
+    cdp.on('Debugger.scriptParsed', e => { if (e.url.startsWith(PLUGIN_URL.split('?')[0])) pluginScripts.add(e.scriptId); });
+    await cdp.send('Debugger.enable');
+    const pluginListeners = async expression => {
+        const { result } = await cdp.send('Runtime.evaluate', { expression });
+        const { listeners } = await cdp.send('DOMDebugger.getEventListeners', { objectId: result.objectId, depth: -1, pierce: true });
+        return listeners.filter(l => pluginScripts.has(l.scriptId)).map(l => l.type);
+    };
+    await page.evaluate(() => { window.__lensDoc = document.querySelector('.pip iframe').contentDocument; });
+    const allListeners = async () => ({ page: [...(await pluginListeners('window')), ...(await pluginListeners('document'))], lensPage: await pluginListeners('window.__lensDoc') });
+    // Control: while the lens is open, its listeners are seen
+    const listenersOpen = await allListeners();
+    const left = await page.evaluate(async pluginUrl => {
         const KEY = 'windy-plugin-layer-lens';
+        const wait = ms => new Promise(r => setTimeout(r, ms));
         const w = document.querySelector('.pip iframe').contentWindow;
         const lens = { store: w.W.store, map: w.W.map.map, doc: w.document };
+        // Notes any timer or animation frame asked for by plugin code
+        const fromPlugin = [];
+        const watchCalls = () => ['requestAnimationFrame', 'setTimeout', 'setInterval'].map(name => {
+            const original = window[name];
+            window[name] = function (...args) {
+                if ((new Error().stack || '').includes(pluginUrl)) fromPlugin.push(name);
+                return original.apply(this, args);
+            };
+            return () => { window[name] = original; };
+        });
+        // Everything on the main page the lens watched: its classes and styles, the map's box, the window, presses and keys
+        const pokeMainPage = async press => {
+            const mapBlock = W.map.map.getContainer().parentElement;
+            document.body.classList.add('pip-test-poke');
+            mapBlock.style.marginLeft = '-1px';
+            await wait(100);
+            document.body.classList.remove('pip-test-poke');
+            mapBlock.style.marginLeft = '';
+            window.dispatchEvent(new Event('resize'));
+            if (press) document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+            await wait(300);
+        };
+        // Control: while the lens is open, poking the page has its code ask for frames.
+        // No press: that would close the panel this closes with.
+        let unwatch = watchCalls();
+        await pokeMainPage(false);
+        unwatch.forEach(u => u());
+        const callsWhileOpen = fromPlugin.splice(0).length;
+
+        const panelOpenAtClose = !!document.querySelector('.pip__panel');
         window.__pipApp.$destroy();
         window.__pipNode.remove();
-        await new Promise(r => setTimeout(r, 500));
+        unwatch = watchCalls();
+        await wait(500);
         const saved = localStorage.getItem(KEY);
         localStorage.setItem(KEY, 'SENTINEL');
         const lensTime = lens.store.get('timestamp');
@@ -612,12 +734,31 @@ const check = (name, ok, detail) => {
         lens.doc.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
         W.store.set('timestamp', W.store.get('timestamp') + 3 * 3600 * 1000);
         W.map.map.setView([-30, 150], 6, { animate: false });
-        await new Promise(r => setTimeout(r, 500));
-        const out = { savedState: localStorage.getItem(KEY) === 'SENTINEL' ? 'untouched' : 'rewritten', lensTimeFollowedMain: lens.store.get('timestamp') !== lensTime, lensMapFollowedMain: Math.abs(lens.map.getCenter().lat - -30) < 0.01, frames: document.querySelectorAll('iframe').length };
+        await pokeMainPage(true);
+        // The side pane slides the map, which the lens followed frame by frame
+        W.broadcast.emit('rqstOpen', 'menu');
+        await wait(1500);
+        W.broadcast.emit('rqstClose', 'menu');
+        await wait(1500);
+        unwatch.forEach(u => u());
+        const out = {
+            savedState: localStorage.getItem(KEY) === 'SENTINEL' ? 'untouched' : 'rewritten',
+            lensTimeFollowedMain: lens.store.get('timestamp') !== lensTime,
+            lensMapFollowedMain: Math.abs(lens.map.getCenter().lat - -30) < 0.01,
+            frames: document.querySelectorAll('iframe').length,
+            panelOpenAtClose,
+            leftOnPage: document.querySelectorAll('.pip, .pip__panel').length,
+            callsWhileOpen,
+            callsAfterClose: fromPlugin,
+        };
         localStorage.setItem(KEY, saved);
         return out;
-    });
+    }, PLUGIN_URL.split('?')[0]);
+    const listenersClosed = await allListeners();
+    await cdp.send('Debugger.disable');
+    await cdp.detach();
     check('closing removes every listener, on the main Windy and on the discarded second one', left.savedState === 'untouched' && !left.lensTimeFollowedMain && !left.lensMapFollowedMain && left.frames === 0, left);
+    check('closing leaves no panel, event listener, timer or frame of the plugin behind', left.panelOpenAtClose && left.leftOnPage === 0 && left.callsAfterClose.length === 0 && listenersClosed.page.length === 0 && listenersClosed.lensPage.length === 0 && left.callsWhileOpen > 0 && listenersOpen.page.length > 0 && listenersOpen.lensPage.length > 0, { listenersOpen, listenersClosed, callsWhileOpen: left.callsWhileOpen, callsAfterClose: left.callsAfterClose, panelOpenAtClose: left.panelOpenAtClose, leftOnPage: left.leftOnPage });
     await sleep(800);
 
     const lsAfter = await settingsSnapshot();

@@ -64,10 +64,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.screenshot({ path: OUT + '-picker.png' });
 
     // options menu on mobile
-    await page.tap('.pip__bar .pip__icon:nth-of-type(2)');
+    await page.tap('.pip__options');
     await sleep(500);
     const menu = await page.evaluate(() => [...document.querySelectorAll('.menu__label')].map(e => e.textContent));
-    check('menu offers View only: a docked lens has no shape to change', menu.join() === 'View', menu);
+    check('menu offers View only: a docked lens has no shape or opacity to change, and cannot cover the map', menu.join() === 'View' && !(await page.$('.pip__cover')), menu);
     await page.screenshot({ path: OUT + '-menu.png' });
     check('no page errors', errors.length === 0, errors.slice(0, 5));
     await browser.close();
